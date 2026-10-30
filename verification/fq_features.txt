@@ -1,0 +1,5 @@
+PASS L1: zero initial weights, 21 finite normalised features, target switching and deterministic greedy selection
+PASS L2: zero initial weights, 21 finite normalised features, target switching and deterministic greedy selection
+PASS L3: zero initial weights, 21 finite normalised features, target switching and deterministic greedy selection
+PASS L4: zero initial weights, 21 finite normalised features, target switching and deterministic greedy selection
+All feature checks passed.

@@ -1,0 +1,4 @@
+PASS: terminal=True, updated Q=0.400000
+PASS: terminal=False, updated Q=1.399000
+PASS: real episodes update Q-table and record history
+PASS: training budget exception propagates

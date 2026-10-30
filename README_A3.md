@@ -23,3 +23,14 @@ Verification results will be recorded during implementation.
 - Learning curves: moving average over 50 training episodes.
 - Run: python run_ql_rates.py
 - Results: results/ql_rates_<timestamp>/
+
+## Feature-based representation
+
+- Fixed feature vector length: 21.
+- Features describe action type/direction, map distances,
+  nearby terrain and crystal-collection progress.
+- Target changes to launch sites after collecting enough crystals.
+- All features, including bias, are scaled together using L2 norm.
+- Weights initialise to all zeros.
+- Map distances are precomputed from the public map.
+- Run checks: python check_fq_features.py
