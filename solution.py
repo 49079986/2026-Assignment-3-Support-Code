@@ -54,13 +54,32 @@ class Solver:
         return [1, 2, 3, 4, 5]
 
     def ql_initialise(self):
-        pass
+        # Map each GameState to one Q-value per action.
+        self.q_table = {}
+
+        # Store episode statistics for later experiments.
+        self.ql_history = []
+
+        self.ql_alpha = self.QL_ALPHA
 
     def ql_train_episode(self):
         pass
 
     def ql_select_action(self, state: GameState):
-        pass
+        valid_actions = self.game_env.get_valid_actions(state)
+        q_values = self.q_table.get(state)
+
+        # Unseen states have implicit Q-values of zero.
+        # Choose deterministically without modifying the table.
+        if q_values is None:
+            return valid_actions[0]
+
+        return max(
+            valid_actions,
+            key=lambda action: q_values[
+                self.game_env.ACTIONS.index(action)
+            ],
+        )
 
     def fq_initialise(self):
         pass
