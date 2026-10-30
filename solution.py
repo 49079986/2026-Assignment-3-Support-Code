@@ -63,7 +63,109 @@ class Solver:
         self.ql_alpha = self.QL_ALPHA
 
     def ql_train_episode(self):
-        pass
+        env = self.game_env
+        state = env.get_init_state()
+
+        total_reward = 0.0
+        steps = 0
+        epsilon = self._epsilon()
+
+        for _ in range(env.max_episode_steps):
+            if env.is_terminal(state):
+                break
+
+            row = self.q_table.setdefault(
+                state, [0.0] * len(env.ACTIONS)
+            )
+
+            valid_actions = env.get_valid_actions(state)
+            action = self._training_action(
+                valid_actions, row, epsilon
+            )
+            action_index = env.ACTIONS.index(action)
+
+            next_state, reward, _ = env.perform_action(
+                state, action
+            )
+
+            target = reward
+
+            # Terminal states have no future reward term.
+            if not env.is_terminal(next_state):
+                next_row = self.q_table.get(next_state)
+
+                if next_row is not None:
+                    next_best = max(
+                        next_row[env.ACTIONS.index(a)]
+                        for a in env.get_valid_actions(next_state)
+                    )
+                    target += env.gamma * next_best
+
+            row[action_index] += self.ql_alpha * (
+                target - row[action_index]
+            )
+
+            # Continue from the state returned by the environment.
+            state = next_state
+            total_reward += reward
+            steps += 1
+
+            if (
+                env.is_terminal(state)
+                or total_reward <= env.ql_reward_min_tgt
+                or env.is_training_budget_exhausted()
+            ):
+                break
+
+        self._record_episode(
+            self.ql_history,
+            total_reward,
+            steps,
+            epsilon,
+            state,
+        )
+
+    def _epsilon(self):
+        env = self.game_env
+        budget = env.training_step_budget or 1
+
+        decay_steps = max(
+            1.0, budget * self.EPSILON_DECAY_FRACTION
+        )
+        progress = min(
+            1.0, env.training_steps_used / decay_steps
+        )
+
+        return self.EPSILON_START + progress * (
+            self.EPSILON_END - self.EPSILON_START
+        )
+
+    def _training_action(self, valid_actions, row, epsilon):
+        if random.random() < epsilon:
+            return random.choice(valid_actions)
+
+        best_value = max(
+            row[self.game_env.ACTIONS.index(a)]
+            for a in valid_actions
+        )
+
+        best_actions = [
+            a for a in valid_actions
+            if row[self.game_env.ACTIONS.index(a)] == best_value
+        ]
+
+        return random.choice(best_actions)
+
+    def _record_episode(self, history, reward, steps, epsilon, state):
+        history.append({
+            "episode": len(history) + 1,
+            "training_steps": self.game_env.training_steps_used,
+            "reward": reward,
+            "steps": steps,
+            "epsilon": epsilon,
+            "solved": self.game_env.is_solved(state),
+            "terminal": self.game_env.is_terminal(state),
+        })
 
     def ql_select_action(self, state: GameState):
         valid_actions = self.game_env.get_valid_actions(state)
