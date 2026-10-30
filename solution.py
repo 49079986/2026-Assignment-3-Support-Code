@@ -46,15 +46,35 @@ class Solver:
     EPSILON_END = 0.02
     EPSILON_DECAY_FRACTION = 0.8
 
-    DIRECTIONS = {"l": (0, -1), "r": (0, 1), "u": (-1, 0), "d": (1, 0)}
+    DIRECTIONS = {
+        "l": (0, -1),
+        "r": (0, 1),
+        "u": (-1, 0),
+        "d": (1, 0),
+    }
+
     FEATURE_NAMES = (
-        "bias", "walk", "boost", "jump",
-        "left", "right", "up", "down",
-        "target_distance", "target_distance_ahead_1",
-        "target_progress_ahead_1", "target_progress_ahead_2",
-        "target_progress_ahead_4", "lava_forward", "lava_side",
-        "rock_forward", "crater_forward", "crystals_remaining_fraction",
-        "ready_for_launch", "uncollected_crystal_ahead", "launch_ahead",
+        "bias",
+        "walk",
+        "boost",
+        "jump",
+        "left",
+        "right",
+        "up",
+        "down",
+        "target_distance",
+        "target_distance_ahead_1",
+        "target_progress_ahead_1",
+        "target_progress_ahead_2",
+        "target_progress_ahead_4",
+        "lava_forward",
+        "lava_side",
+        "rock_forward",
+        "crater_forward",
+        "crystals_remaining_fraction",
+        "ready_for_launch",
+        "uncollected_crystal_ahead",
+        "launch_ahead",
     )
 
     def __init__(self, game_env: GameEnv):
@@ -198,108 +218,261 @@ class Solver:
         self.fq_weights = [0.0] * len(self.FEATURE_NAMES)
         self.fq_history = []
         self.fq_alpha = self.FQ_ALPHA
+
         self._feature_cache = {}
+
         env = self.game_env
-        self._distance_scale = float(max(1, env.n_rows + env.n_cols))
-        # 地图距离仅是特征描述：不推断隐藏概率，不做 Bellman 规划。
-        targets = list(env.crystal_positions) + list(env.launch_positions)
-        self._map_distances = {pos: self._bfs_map_distances(pos) for pos in targets}
+        self._distance_scale = float(
+            max(1, env.n_rows + env.n_cols)
+        )
+
+        targets = (
+            list(env.crystal_positions)
+            + list(env.launch_positions)
+        )
+
+        self._map_distances = {
+            position: self._bfs_map_distances(position)
+            for position in targets
+        }
+
         self._target_fields = {}
 
     def fq_get_features(self, state: GameState, action):
         key = (state, action)
         cached = self._feature_cache.get(key)
+
         if cached is not None:
             return list(cached)
+
         env = self.game_env
         row, col = state.row, state.col
         dr, dc = self.DIRECTIONS[action[1]]
+
         ready = sum(state.crystal_status) >= env.min_samples
-        field = self._target_distance_field(state.crystal_status)
+
+        field = self._target_distance_field(
+            state.crystal_status
+        )
+
         far = self._distance_scale
         current = field.get((row, col), far)
-        ahead = [self._ray_position(row, col, dr, dc, n) for n in (1, 2, 4)]
-        distances = [field.get(pos, far) for pos in ahead]
-        progress = [(current - d) / far for d in distances]
-        # 步行和跳跃只使用一格方向特征；boost 也看前方两格和四格。
+
+        ahead = [
+            self._ray_position(row, col, dr, dc, length)
+            for length in (1, 2, 4)
+        ]
+
+        distances = [
+            field.get(position, far)
+            for position in ahead
+        ]
+
+        progress = [
+            (current - distance) / far
+            for distance in distances
+        ]
+
         is_boost = action[0] == "b"
+
+        forward = self._tile(row + dr, col + dc)
         side1 = self._tile(row - dc, col + dr)
         side2 = self._tile(row + dc, col - dr)
-        forward = self._tile(row + dr, col + dc)
-        pending = {p for i, p in enumerate(env.crystal_positions)
-                   if not state.crystal_status[i]}
+
+        pending = {
+            position
+            for i, position in enumerate(env.crystal_positions)
+            if not state.crystal_status[i]
+        }
+
         values = [
-            1.0, float(action[0] == "w"), float(is_boost), float(action[0] == "j"),
-            float(action[1] == "l"), float(action[1] == "r"),
-            float(action[1] == "u"), float(action[1] == "d"),
-            min(current / far, 1.0), min(distances[0] / far, 1.0),
-            progress[0], progress[1] if is_boost else 0.0,
+            1.0,
+            float(action[0] == "w"),
+            float(is_boost),
+            float(action[0] == "j"),
+
+            float(action[1] == "l"),
+            float(action[1] == "r"),
+            float(action[1] == "u"),
+            float(action[1] == "d"),
+
+            min(current / far, 1.0),
+            min(distances[0] / far, 1.0),
+
+            progress[0],
+            progress[1] if is_boost else 0.0,
             progress[2] if is_boost else 0.0,
+
             float(forward == env.LAVA_TILE),
-            0.5 * (int(side1 == env.LAVA_TILE) + int(side2 == env.LAVA_TILE)),
-            float(forward == env.ROCK_TILE), float(forward == env.CRATER_TILE),
-            max(0, env.min_samples - sum(state.crystal_status)) / max(1, env.min_samples),
-            float(ready), float(ahead[0] in pending),
-            float(ready and ahead[0] in env.launch_positions),
+            0.5 * (
+                int(side1 == env.LAVA_TILE)
+                + int(side2 == env.LAVA_TILE)
+            ),
+
+            float(forward == env.ROCK_TILE),
+            float(forward == env.CRATER_TILE),
+
+            max(
+                0,
+                env.min_samples - sum(state.crystal_status),
+            ) / max(1, env.min_samples),
+
+            float(ready),
+            float(ahead[0] in pending),
+            float(
+                ready
+                and ahead[0] in env.launch_positions
+            ),
         ]
-        # 统一 L2 缩放以限制单步权重更新幅度；长度固定为 21。
-        norm = max(1.0, math.sqrt(sum(v * v for v in values)))
-        result = tuple(v / norm for v in values)
+
+        norm = max(
+            1.0,
+            math.sqrt(sum(value * value for value in values)),
+        )
+
+        result = tuple(value / norm for value in values)
         self._feature_cache[key] = result
+
         return list(result)
 
     def fq_train_episode(self):
-        pass
+        env = self.game_env
+        state = env.get_init_state()
+        total_reward = 0.0
+        steps = 0
+        epsilon = self._epsilon()
+        for _ in range(env.max_episode_steps):
+            if env.is_terminal(state):
+                break
+            valid = env.get_valid_actions(state)
+            features = {a: self.fq_get_features(state, a) for a in valid}
+            values = {a: self._dot(self.fq_weights, features[a]) for a in valid}
+            if random.random() < epsilon:
+                action = random.choice(valid)
+            else:
+                best = max(values.values())
+                action = random.choice([a for a in valid if values[a] == best])
+            next_state, reward, _ = env.perform_action(state, action)
+            target = reward
+            if not env.is_terminal(next_state):
+                target += env.gamma * max(
+                    self._dot(self.fq_weights, self.fq_get_features(next_state, a))
+                    for a in env.get_valid_actions(next_state)
+                )
+            error = target - values[action]
+            # 半梯度更新：w_i <- w_i + alpha * TD_error * feature_i。
+            for i, value in enumerate(features[action]):
+                self.fq_weights[i] += self.fq_alpha * error * value
+            state = next_state
+            total_reward += reward
+            steps += 1
+            if (env.is_terminal(state)
+                    or total_reward <= env.fq_reward_min_tgt
+                    or env.is_training_budget_exhausted()):
+                break
+        self._record_episode(self.fq_history, total_reward, steps, epsilon, state)
 
     def fq_select_action(self, state: GameState):
-        valid = self.game_env.get_valid_actions(state)
-        return max(valid, key=lambda a: self._dot(
-            self.fq_weights, self.fq_get_features(state, a)))
+        valid_actions = self.game_env.get_valid_actions(state)
+
+        return max(
+            valid_actions,
+            key=lambda action: self._dot(
+                self.fq_weights,
+                self.fq_get_features(state, action),
+            ),
+        )
 
     @staticmethod
     def _dot(weights, features):
-        return sum(w * f for w, f in zip(weights, features))
+        return sum(
+            weight * feature
+            for weight, feature in zip(weights, features)
+        )
 
     def _tile(self, row, col):
         env = self.game_env
-        if not (0 <= row < env.n_rows and 0 <= col < env.n_cols):
+
+        if not (
+            0 <= row < env.n_rows
+            and 0 <= col < env.n_cols
+        ):
             return env.ROCK_TILE
+
         return env.grid_data[row][col]
 
     def _bfs_map_distances(self, target):
         distances = {target: 0}
         queue = deque([target])
+
         while queue:
             row, col = queue.popleft()
+
             for dr, dc in self.DIRECTIONS.values():
                 other = (row + dr, col + dc)
-                if (other not in distances and self._tile(*other)
-                        not in (self.game_env.ROCK_TILE, self.game_env.LAVA_TILE)):
-                    distances[other] = distances[(row, col)] + 1
+
+                if (
+                    other not in distances
+                    and self._tile(*other) not in (
+                        self.game_env.ROCK_TILE,
+                        self.game_env.LAVA_TILE,
+                    )
+                ):
+                    distances[other] = (
+                        distances[(row, col)] + 1
+                    )
                     queue.append(other)
+
         return distances
 
     def _target_distance_field(self, crystal_status):
         if crystal_status not in self._target_fields:
             env = self.game_env
+
             if sum(crystal_status) >= env.min_samples:
                 targets = env.launch_positions
             else:
-                targets = [p for i, p in enumerate(env.crystal_positions)
-                           if not crystal_status[i]]
-            cells = set().union(*(self._map_distances[p] for p in targets))
+                targets = [
+                    position
+                    for i, position in enumerate(
+                        env.crystal_positions
+                    )
+                    if not crystal_status[i]
+                ]
+
+            cells = set().union(
+                *(
+                    self._map_distances[position]
+                    for position in targets
+                )
+            )
+
             self._target_fields[crystal_status] = {
-                cell: min(self._map_distances[p].get(cell, self._distance_scale)
-                          for p in targets) for cell in cells}
+                cell: min(
+                    self._map_distances[position].get(
+                        cell, self._distance_scale
+                    )
+                    for position in targets
+                )
+                for cell in cells
+            }
+
         return self._target_fields[crystal_status]
 
     def _ray_position(self, row, col, dr, dc, length):
-        # 只查看公开地图中的直线位置，不调用环境的动力学函数。
         for _ in range(length):
-            other = row + dr, col + dc
-            if self._tile(*other) in (self.game_env.ROCK_TILE, self.game_env.LAVA_TILE):
+            other = (row + dr, col + dc)
+            tile = self._tile(*other)
+
+            if tile in (
+                self.game_env.ROCK_TILE,
+                self.game_env.LAVA_TILE,
+            ):
                 break
+
             row, col = other
-            if self._tile(row, col) == self.game_env.CRATER_TILE:
+
+            if tile == self.game_env.CRATER_TILE:
                 break
+
         return row, col

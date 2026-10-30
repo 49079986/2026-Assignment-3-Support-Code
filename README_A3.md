@@ -34,3 +34,16 @@ Verification results will be recorded during implementation.
 - Weights initialise to all zeros.
 - Map distances are precomputed from the public map.
 - Run checks: python check_fq_features.py
+
+## FQ training and four-level baseline
+
+- FQ uses linear Q-learning with alpha=0.03.
+- Every weight update uses the same TD error computed from old weights.
+- Terminal targets contain only the immediate reward.
+- Training checks: python check_fq_training.py
+- Baseline experiments: python run_baseline.py
+- Levels: L1, L2, L3, L4.
+- Both algorithms use their own official training budgets.
+- Final greedy evaluation uses 1000 trials.
+- FQ also uses the official generalisation evaluation.
+- Results include episode logs, metrics, curves and labelled weights.

@@ -1,0 +1,4 @@
+PASS: exact FQ update, terminal=True
+PASS: exact FQ update, terminal=False
+PASS: real FQ training, history and read-only greedy evaluation
+PASS: training budget exception propagates
