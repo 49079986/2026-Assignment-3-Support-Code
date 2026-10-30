@@ -11,3 +11,15 @@ Initial configuration:
 AI assistance:
 OpenAI Codex assisted with code and development guidance.
 Verification results will be recorded during implementation.
+
+## Fixed learning-rate experiment
+
+- Map: L1
+- Fixed learning rates: 0.1, 0.2, 0.4
+- Other hyperparameters, seed and budget settings held constant.
+- Each run starts with a fresh environment and solver.
+- Training and evaluation use the official harness.
+- Final evaluation: 1000 greedy episodes.
+- Learning curves: moving average over 50 training episodes.
+- Run: python run_ql_rates.py
+- Results: results/ql_rates_<timestamp>/
